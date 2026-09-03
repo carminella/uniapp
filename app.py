@@ -2,23 +2,18 @@ import streamlit as st
 import requests
 import time
 
-# INSERISCI QUI IL TUO LINK DI RENDER (senza lo slash finale!)
 API_URL = "https://uniapp-o6cv.onrender.com"
 
 st.set_page_config(page_title="Uni Study Hub", page_icon="📚", layout="centered")
 
-# Inizializza lo stato della sessione per l'autenticazione
 if "token" not in st.session_state:
     st.session_state.token = None
-if "username" not in st.session_state:
-    st.session_state.username = None
+if "email" not in st.session_state:
+    st.session_state.email = None
 
 def get_headers():
     return {"Authorization": f"Bearer {st.session_state.token}"}
 
-# ==========================================
-# SE NON LOGGATO: SCHERMATA DI ACCESSO / REGISTRAZIONE
-# ==========================================
 if not st.session_state.token:
     st.title("Uni Study Hub 📚")
     st.write("Il tuo spazio personale e protetto per gestire esami, appunti e focus.")
@@ -27,23 +22,23 @@ if not st.session_state.token:
     
     if choice == "Accedi":
         with st.form("login_form"):
-            username = st.text_input("Nome Utente")
+            email = st.text_input("La tua Email")
             password = st.text_input("Password", type="password")
             submit_login = st.form_submit_button("Accedi")
             
             if submit_login:
-                if username and password:
+                if email and password:
                     try:
-                        res = requests.post(f"{API_URL}/token", data={"username": username, "password": password})
+                        res = requests.post(f"{API_URL}/token", data={"username": email, "password": password})
                         if res.status_code == 200:
                             data = res.json()
                             st.session_state.token = data["access_token"]
-                            st.session_state.username = username
+                            st.session_state.email = email
                             st.success("Login effettuato con successo! 🎉")
                             st.rerun()
                         else:
                             try:
-                                error_detail = res.json().get("detail", "Nome utente o password errati.")
+                                error_detail = res.json().get("detail", "Email o password errati.")
                             except:
                                 error_detail = f"Errore del server ({res.status_code}): {res.text}"
                             st.error(error_detail)
@@ -55,13 +50,14 @@ if not st.session_state.token:
     else:
         with st.form("signup_form"):
             username = st.text_input("Scegli un Nome Utente")
+            email = st.text_input("La tua Email")
             password = st.text_input("Scegli una Password", type="password")
             submit_signup = st.form_submit_button("Registrati")
             
             if submit_signup:
-                if username and password:
+                if username and email and password:
                     try:
-                        res = requests.post(f"{API_URL}/signup", data={"username": username, "password": password})
+                        res = requests.post(f"{API_URL}/signup", data={"username": username, "email": email, "password": password})
                         if res.status_code == 200:
                             st.success("Registrazione completata! Ora seleziona 'Accedi' per entrare.")
                         else:
@@ -75,28 +71,24 @@ if not st.session_state.token:
                 else:
                     st.warning("Compila tutti i campi.")
 
-# ==========================================
-# SE LOGGATO: APPLICAZIONE PRINCIPALE
-# ==========================================
 else:
-    st.sidebar.write(f"👤 Utente: **{st.session_state.username}**")
+    st.sidebar.write(f"📧 Email: **{st.session_state.email}**")
     if st.sidebar.button("Esci (Logout)"):
         st.session_state.token = None
-        st.session_state.username = None
+        st.session_state.email = None
         st.rerun()
 
     st.title("Uni Study Hub 📚")
-    st.write(f"Benvenuta nel tuo spazio protetto, {st.session_state.username}!")
+    st.write(f"Benvenuta nel tuo spazio protetto!")
 
-    # Modifica "carmen" con il tuo username esatto di registrazione per vedere il pannello admin
-    is_admin = st.session_state.username.lower() == "carmen"
+    # Sostituisci con la tua email esatta per abilitare il pannello admin
+    is_admin = st.session_state.email.lower() == "tua-email@admin.com"
 
     if is_admin:
         tab1, tab2, tab3, tab4 = st.tabs(["📚 Corsi & Appunti", "🍅 Pomodoro & Albero", "📊 Situazione Studio", "🔒 Pannello Admin"])
     else:
         tab1, tab2, tab3 = st.tabs(["📚 Corsi & Appunti", "🍅 Pomodoro & Albero", "📊 Situazione Studio"])
 
-    # TAB 1: CORSI & APPUNTI
     with tab1:
         st.header("Gestione Materiali di Studio")
         col1, col2 = st.columns(2)
@@ -153,7 +145,6 @@ else:
             except:
                 st.error("Impossibile caricare i dati dal server.")
 
-    # TAB 2: POMODORO & ALBERO
     with tab2:
         st.header("Timer Pomodoro & Foresta del Focus 🌳")
         st.write("Scegli i tuoi intervalli, concentrati senza distrazioni e guarda crescere il tuo albero!")
@@ -211,7 +202,6 @@ else:
         if music_link:
             st.markdown(f"[🎵 Clicca qui per aprire la musica in una nuova scheda]({music_link})", unsafe_allow_html=True)
 
-    # TAB 3: SITUAZIONE STUDIO
     with tab3:
         st.header("La Situazione del mio Studio 📊")
         try:
@@ -235,7 +225,6 @@ else:
         except:
             st.error("Impossibile connettersi al backend.")
 
-    # TAB 4: PANNELLO ADMIN
     if is_admin:
         with tab4:
             st.header("🔒 Pannello Admin - Utenti Registrati")
@@ -248,7 +237,7 @@ else:
                     users_list = users_res.json()
                     st.success(f"Totale utenti registrati: {len(users_list)}")
                     for u in users_list:
-                        st.markdown(f"- 👤 **ID {u['id']}**: `{u['username']}`")
+                        st.markdown(f"- 👤 **{u['username']}** — 📧 `{u['email']}`")
                 else:
                     st.error("Errore nel recupero degli utenti.")
             except:

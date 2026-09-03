@@ -12,10 +12,9 @@ from datetime import datetime, timedelta
 from database import create_db_and_tables, get_session
 from models import User, Course, Note
 
-# Configurazione per la sicurezza e i Token JWT
-SECRET_KEY = "Darione"
+SECRET_KEY = "la_tua_chiave_segreta_super_sicura_da_cambiare"
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # Durata del token (24 ore)
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
@@ -37,8 +36,6 @@ app.add_middleware(
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# --- FUNZIONI DI SUPPORTO PER LA SICUREZZA ---
-
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
 
@@ -54,7 +51,6 @@ def create_access_token(data: dict):
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
-# Dipendenza per ottenere l'utente attualmente loggato tramite il Token
 def get_current_user(token: str = Depends(oauth2_scheme), session: Session = Depends(get_session)):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -63,28 +59,25 @@ def get_current_user(token: str = Depends(oauth2_scheme), session: Session = Dep
     )
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get("sub")
-        if username is None:
+        email: str = payload.get("sub")
+        if email is None:
             raise credentials_exception
     except JWTError:
         raise credentials_exception
         
-    user = session.exec(select(User).where(User.username == username)).first()
+    user = session.exec(select(User).where(User.email == email)).first()
     if user is None:
         raise credentials_exception
     return user
 
-
-# --- ENDPOINT DI AUTENTICAZIONE (Signup & Login) ---
-
 @app.post("/signup")
-def register_user(username: str = Form(...), password: str = Form(...), session: Session = Depends(get_session)):
-    existing_user = session.exec(select(User).where(User.username == username)).first()
+def register_user(username: str = Form(...), email: str = Form(...), password: str = Form(...), session: Session = Depends(get_session)):
+    existing_user = session.exec(select(User).where((User.email == email) | (User.username == username))).first()
     if existing_user:
-        raise HTTPException(status_code=400, detail="Questo nome utente è già registrato.")
+        raise HTTPException(status_code=400, detail="Email o Nome Utente già registrati.")
     
     hashed_password = get_password_hash(password)
-    new_user = User(username=username, hashed_password=hashed_password)
+    new_user = User(username=username, email=email, hashed_password=hashed_password)
     session.add(new_user)
     session.commit()
     session.refresh(new_user)
@@ -93,34 +86,25 @@ def register_user(username: str = Form(...), password: str = Form(...), session:
 
 @app.post("/token")
 def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), session: Session = Depends(get_session)):
-    user = session.exec(select(User).where(User.username == form_data.username)).first()
+    user = session.exec(select(User).where(User.email == form_data.username)).first()
     if not user or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Nome utente o password errati",
+            detail="Email o password errati",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    access_token = create_access_token(data={"sub": user.username})
+    access_token = create_access_token(data={"sub": user.email})
     return {"access_token": access_token, "token_type": "bearer"}
-
-
-# --- ENDPOINT ADMIN PER VEDERE GLI UTENTI REGISTRATI ---
 
 @app.get("/users/", response_model=list[dict])
 def get_all_users(current_user: User = Depends(get_current_user), session: Session = Depends(get_session)):
     users = session.exec(select(User)).all()
-    return [{"id": u.id, "username": u.username} for u in users]
-
-
-# --- GESTIONE CORSI (Isolati per utente) ---
+    return [{"id": u.id, "username": u.username, "email": u.email} for u in users]
 
 @app.get("/courses/", response_model=list[Course])
 def read_courses(current_user: User = Depends(get_current_user), session: Session = Depends(get_session)):
     courses = session.exec(select(Course).where(Course.user_id == current_user.id)).all()
     return courses
-
-
-# --- GESTIONE APPUNTI (Isolati per utente) ---
 
 @app.post("/notes/upload-folder/")
 def upload_folder(
