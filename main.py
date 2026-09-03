@@ -13,7 +13,7 @@ from database import create_db_and_tables, get_session
 from models import User, Course, Note
 
 # Configurazione per la sicurezza e i Token JWT
-SECRET_KEY = "la_tua_chiave_segreta_super_sicura_da_cambiare"
+SECRET_KEY = "Darione"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # Durata del token (24 ore)
 

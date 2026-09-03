@@ -3,7 +3,7 @@ import requests
 import time
 
 # INSERISCI QUI IL TUO LINK DI RENDER (senza lo slash finale!)
-API_URL = "https://il-tuo-servizio.onrender.com"
+API_URL = "https://uniapp-o6cv.onrender.com/"
 
 st.set_page_config(page_title="Uni Study Hub", page_icon="📚", layout="centered")
 
@@ -42,7 +42,11 @@ if not st.session_state.token:
                             st.success("Login effettuato con successo! 🎉")
                             st.rerun()
                         else:
-                            st.error("Nome utente o password errati.")
+                            try:
+                                error_detail = res.json().get("detail", "Nome utente o password errati.")
+                            except:
+                                error_detail = f"Errore del server ({res.status_code}): {res.text}"
+                            st.error(error_detail)
                     except requests.exceptions.ConnectionError:
                         st.error("Impossibile connettersi al server backend.")
                 else:
@@ -61,7 +65,10 @@ if not st.session_state.token:
                         if res.status_code == 200:
                             st.success("Registrazione completata! Ora seleziona 'Accedi' per entrare.")
                         else:
-                            error_detail = res.json().get("detail", "Errore durante la registrazione.")
+                            try:
+                                error_detail = res.json().get("detail", "Errore durante la registrazione.")
+                            except:
+                                error_detail = f"Errore del server ({res.status_code}): {res.text}"
                             st.error(error_detail)
                     except requests.exceptions.ConnectionError:
                         st.error("Impossibile connettersi al server backend.")
@@ -81,7 +88,7 @@ else:
     st.title("Uni Study Hub 📚")
     st.write(f"Benvenuta nel tuo spazio protetto, {st.session_state.username}!")
 
-    # Se sei tu (puoi cambiare "carmen" con il tuo username esatto di registrazione), compare la tab Admin
+    # Modifica "carmen" con il tuo username esatto di registrazione per vedere il pannello admin
     is_admin = st.session_state.username.lower() == "carmen"
 
     if is_admin:
@@ -228,7 +235,7 @@ else:
         except:
             st.error("Impossibile connettersi al backend.")
 
-    # TAB 4: PANNELLO ADMIN (Visibile solo se loggata come admin)
+    # TAB 4: PANNELLO ADMIN
     if is_admin:
         with tab4:
             st.header("🔒 Pannello Admin - Utenti Registrati")
