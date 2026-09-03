@@ -2,7 +2,8 @@ import streamlit as st
 import requests
 import time
 
-API_URL = "https://uniapp-o6cv.onrender.com/"
+# INSERISCI QUI IL TUO LINK DI RENDER (senza lo slash finale!)
+API_URL = "https://il-tuo-servizio.onrender.com"
 
 st.set_page_config(page_title="Uni Study Hub", page_icon="📚", layout="centered")
 
@@ -22,7 +23,6 @@ if not st.session_state.token:
     st.title("Uni Study Hub 📚")
     st.write("Il tuo spazio personale e protetto per gestire esami, appunti e focus.")
     
-    # Corretto il testo del radio button
     choice = st.radio("Scegli un'opzione", ["Accedi", "Registrati"])
     
     if choice == "Accedi":
@@ -44,7 +44,7 @@ if not st.session_state.token:
                         else:
                             st.error("Nome utente o password errati.")
                     except requests.exceptions.ConnectionError:
-                        st.error("Impossibile connettersi al server backend. Assicurati che FastAPI sia acceso.")
+                        st.error("Impossibile connettersi al server backend.")
                 else:
                     st.warning("Compila tutti i campi.")
                     
@@ -57,14 +57,14 @@ if not st.session_state.token:
             if submit_signup:
                 if username and password:
                     try:
-                        res = requests.post(f"{API_URL}/signup/", data={"username": username, "password": password})
+                        res = requests.post(f"{API_URL}/signup", data={"username": username, "password": password})
                         if res.status_code == 200:
                             st.success("Registrazione completata! Ora seleziona 'Accedi' per entrare.")
                         else:
                             error_detail = res.json().get("detail", "Errore durante la registrazione.")
                             st.error(error_detail)
                     except requests.exceptions.ConnectionError:
-                        st.error("Impossibile connettersi al server backend. Assicurati che FastAPI sia acceso.")
+                        st.error("Impossibile connettersi al server backend.")
                 else:
                     st.warning("Compila tutti i campi.")
 
@@ -81,7 +81,13 @@ else:
     st.title("Uni Study Hub 📚")
     st.write(f"Benvenuta nel tuo spazio protetto, {st.session_state.username}!")
 
-    tab1, tab2, tab3 = st.tabs(["📚 Corsi & Appunti", "🍅 Pomodoro & Albero", "📊 Situazione Studio"])
+    # Se sei tu (puoi cambiare "carmen" con il tuo username esatto di registrazione), compare la tab Admin
+    is_admin = st.session_state.username.lower() == "carmen"
+
+    if is_admin:
+        tab1, tab2, tab3, tab4 = st.tabs(["📚 Corsi & Appunti", "🍅 Pomodoro & Albero", "📊 Situazione Studio", "🔒 Pannello Admin"])
+    else:
+        tab1, tab2, tab3 = st.tabs(["📚 Corsi & Appunti", "🍅 Pomodoro & Albero", "📊 Situazione Studio"])
 
     # TAB 1: CORSI & APPUNTI
     with tab1:
@@ -140,7 +146,7 @@ else:
             except:
                 st.error("Impossibile caricare i dati dal server.")
 
-    # TAB 2: POMODORO & ALBERO DEL FOCUS + MUSICA
+    # TAB 2: POMODORO & ALBERO
     with tab2:
         st.header("Timer Pomodoro & Foresta del Focus 🌳")
         st.write("Scegli i tuoi intervalli, concentrati senza distrazioni e guarda crescere il tuo albero!")
@@ -193,23 +199,14 @@ else:
             st.rerun()
 
         st.divider()
-
         st.markdown("### 🎧 Playlist di Sottofondo per lo Studio")
-        st.write("Scegli la tua musica preferita e aprila in una nuova scheda per ascoltarla mentre studi:")
-        
-        music_link = st.text_input(
-            "Link YouTube della musica:", 
-            value="https://www.youtube.com/watch?v=O135u_19gO8&t=783s"
-        )
-        
+        music_link = st.text_input("Link YouTube della musica:", value="https://www.youtube.com/watch?v=O135u_19gO8&t=783s")
         if music_link:
             st.markdown(f"[🎵 Clicca qui per aprire la musica in una nuova scheda]({music_link})", unsafe_allow_html=True)
 
     # TAB 3: SITUAZIONE STUDIO
     with tab3:
         st.header("La Situazione del mio Studio 📊")
-        st.write("Monitora a che punto sei con i tuoi esami universitari.")
-        
         try:
             courses_res = requests.get(f"{API_URL}/courses/", headers=get_headers())
             if courses_res.status_code == 200:
@@ -229,4 +226,23 @@ else:
                 else:
                     st.info("Nessun corso inserito nel database.")
         except:
-            st.error("Impossibile connettersi al backend per leggere la situazione.")
+            st.error("Impossibile connettersi al backend.")
+
+    # TAB 4: PANNELLO ADMIN (Visibile solo se loggata come admin)
+    if is_admin:
+        with tab4:
+            st.header("🔒 Pannello Admin - Utenti Registrati")
+            if st.button("Aggiorna Lista Utenti"):
+                st.rerun()
+                
+            try:
+                users_res = requests.get(f"{API_URL}/users/", headers=get_headers())
+                if users_res.status_code == 200:
+                    users_list = users_res.json()
+                    st.success(f"Totale utenti registrati: {len(users_list)}")
+                    for u in users_list:
+                        st.markdown(f"- 👤 **ID {u['id']}**: `{u['username']}`")
+                else:
+                    st.error("Errore nel recupero degli utenti.")
+            except:
+                st.error("Impossibile connettersi al server.")

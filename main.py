@@ -15,7 +15,7 @@ from models import User, Course, Note
 # Configurazione per la sicurezza e i Token JWT
 SECRET_KEY = "la_tua_chiave_segreta_super_sicura_da_cambiare"
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 # Durata del token (24 ore)
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # Durata del token (24 ore)
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
@@ -77,7 +77,7 @@ def get_current_user(token: str = Depends(oauth2_scheme), session: Session = Dep
 
 # --- ENDPOINT DI AUTENTICAZIONE (Signup & Login) ---
 
-@app.post("/signup/")
+@app.post("/signup")
 def register_user(username: str = Form(...), password: str = Form(...), session: Session = Depends(get_session)):
     existing_user = session.exec(select(User).where(User.username == username)).first()
     if existing_user:
@@ -102,6 +102,14 @@ def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), ses
         )
     access_token = create_access_token(data={"sub": user.username})
     return {"access_token": access_token, "token_type": "bearer"}
+
+
+# --- ENDPOINT ADMIN PER VEDERE GLI UTENTI REGISTRATI ---
+
+@app.get("/users/", response_model=list[dict])
+def get_all_users(current_user: User = Depends(get_current_user), session: Session = Depends(get_session)):
+    users = session.exec(select(User)).all()
+    return [{"id": u.id, "username": u.username} for u in users]
 
 
 # --- GESTIONE CORSI (Isolati per utente) ---
