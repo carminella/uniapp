@@ -96,6 +96,19 @@ def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), ses
     access_token = create_access_token(data={"sub": user.email})
     return {"access_token": access_token, "token_type": "bearer"}
 
+# Endpoint per cambiare il nome utente
+@app.put("/user/update-username")
+def update_username(new_username: str = Form(...), current_user: User = Depends(get_current_user), session: Session = Depends(get_session)):
+    existing = session.exec(select(User).where(User.username == new_username)).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Questo nome utente è già in uso.")
+    
+    current_user.username = new_username
+    session.add(current_user)
+    session.commit()
+    session.refresh(current_user)
+    return {"message": "Nome utente aggiornato con successo!"}
+
 @app.get("/users/", response_model=list[dict])
 def get_all_users(current_user: User = Depends(get_current_user), session: Session = Depends(get_session)):
     users = session.exec(select(User)).all()

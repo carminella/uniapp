@@ -78,10 +78,27 @@ else:
         st.session_state.email = None
         st.rerun()
 
+    st.sidebar.divider()
+    st.sidebar.subheader("⚙️ Impostazioni Account")
+    with st.sidebar.form("change_username_form"):
+        new_username = st.text_input("Nuovo Nome Utente")
+        submit_change = st.form_submit_button("Aggiorna Nome")
+        if submit_change:
+            if new_username:
+                try:
+                    res = requests.put(f"{API_URL}/user/update-username", data={"new_username": new_username}, headers=get_headers())
+                    if res.status_code == 200:
+                        st.sidebar.success("Nome utente aggiornato!")
+                    else:
+                        st.sidebar.error(res.json().get("detail", "Errore."))
+                except:
+                    st.sidebar.error("Errore di connessione.")
+            else:
+                st.sidebar.warning("Inserisci un nome.")
+
     st.title("Uni Study Hub 📚")
     st.write(f"Benvenuta nel tuo spazio protetto!")
 
-    # Sostituisci con la tua email esatta per abilitare il pannello admin
     is_admin = st.session_state.email.lower() == "tua-email@admin.com"
 
     if is_admin:
