@@ -2,7 +2,7 @@ import streamlit as st
 import requests
 import time
 
-API_URL = "http://127.0.0.1:8000"
+API_URL = "https://il-tuo-servizio.onrender.com"
 
 st.set_page_config(page_title="Uni Study Hub", page_icon="📚", layout="centered")
 
