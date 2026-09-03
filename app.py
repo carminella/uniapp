@@ -123,7 +123,8 @@ else:
     st.title("Uni Study Hub 📚")
     st.write(f"Benvenuta nel tuo spazio protetto!")
 
-    is_admin = st.session_state.email.lower() == "tua-email@admin.com"
+    # Sostituisci "tua-email@admin.com" con la tua vera email di registrazione per sbloccare il pannello admin
+    is_admin = st.session_state.email.lower() == "carmencaracoci0@gmail.com"
 
     if is_admin:
         tab1, tab2, tab3, tab4 = st.tabs(["📚 Corsi & Appunti", "🍅 Pomodoro & Albero", "📊 Situazione Studio", "🔒 Pannello Admin"])
@@ -176,7 +177,6 @@ else:
                     else:
                         for c in courses:
                             with st.expander(f"📖 {c['name']} (Stato: {c['status']})"):
-                                # Menu a tendina e pulsante per aggiornare lo stato del corso
                                 new_status = st.selectbox(
                                     "Cambia stato", 
                                     ["in studio", "completato"], 
@@ -184,7 +184,7 @@ else:
                                     key=f"status_{c['id']}"
                                 )
                                 
-                                if st.button("Aggiorna Stato", key=f"btn_{c['id']}" ):
+                                if st.button("Aggiorna Stato", key=f"btn_{c['id']}"):
                                     try:
                                         res = requests.put(
                                             f"{API_URL}/courses/{c['id']}/status", 
@@ -208,7 +208,7 @@ else:
                                 else:
                                     st.caption("Nessun appunto caricato per questo corso.")
             except:
-                st.error("Impossibile caricare i dati dal server.")
+                                st.error("Impossibile caricare i dati dal server.")
 
     with tab2:
         st.header("Timer Pomodoro & Foresta del Focus 🌳")
