@@ -10,6 +10,10 @@ if "token" not in st.session_state:
     st.session_state.token = None
 if "email" not in st.session_state:
     st.session_state.email = None
+if "waiting_for_otp" not in st.session_state:
+    st.session_state.waiting_for_otp = False
+if "temp_email" not in st.session_state:
+    st.session_state.temp_email = ""
 
 def get_headers():
     return {"Authorization": f"Bearer {st.session_state.token}"}
@@ -18,88 +22,112 @@ if not st.session_state.token:
     st.title("Uni Study Hub 📚")
     st.write("Il tuo spazio personale e protetto per gestire esami, appunti e focus.")
     
-    choice = st.radio("Scegli un'opzione", ["Accedi", "Registrati", "Password dimenticata"])
-    
-    if choice == "Accedi":
-        with st.form("login_form"):
-            email = st.text_input("La tua Email")
-            password = st.text_input("Password", type="password")
-            submit_login = st.form_submit_button("Accedi")
+    # Se siamo in attesa del codice OTP via email
+    if st.session_state.waiting_for_otp:
+        st.info(f"Abbiamo inviato un codice di verifica a **{st.session_state.temp_email}**. Controlla la tua casella di posta!")
+        
+        with st.form("otp_form"):
+            otp_code = st.text_input("Inserisci il codice a 6 cifre ricevuto via email", max_chars=6)
+            submit_otp = st.form_submit_button("Conferma e Accedi")
             
-            if submit_login:
-                if email and password:
+            if submit_otp:
+                if otp_code:
                     try:
-                        res = requests.post(f"{API_URL}/token", data={"username": email, "password": password})
+                        # Mandiamo il codice come "password" al token endpoint come richiesto dal backend
+                        res = requests.post(f"{API_URL}/token", data={"username": st.session_state.temp_email, "password": otp_code})
                         if res.status_code == 200:
                             data = res.json()
                             st.session_state.token = data["access_token"]
-                            st.session_state.email = email
-                            st.success("Login effettuato con successo! 🎉")
+                            st.session_state.email = st.session_state.temp_email
+                            st.session_state.waiting_for_otp = False
+                            st.success("Accesso completato con successo! 🎉")
                             st.rerun()
                         else:
-                            try:
-                                error_detail = res.json().get("detail", "Email o password errati.")
-                            except:
-                                error_detail = f"Errore del server ({res.status_code}): {res.text}"
-                            st.error(error_detail)
-                    except requests.exceptions.ConnectionError:
-                        st.error("Impossibile connettersi al server backend.")
+                            st.error("Codice errato o scaduto. Riprova.")
+                    except:
+                        st.error("Errore di connessione al server.")
                 else:
-                    st.warning("Compila tutti i campi.")
+                    st.warning("Inserisci il codice.")
                     
-    elif choice == "Registrati":
-        with st.form("signup_form"):
-            username = st.text_input("Scegli un Nome Utente")
-            email = st.text_input("La tua Email")
-            password = st.text_input("Scegli una Password", type="password")
-            submit_signup = st.form_submit_button("Registrati")
-            
-            if submit_signup:
-                if username and email and password:
-                    try:
-                        res = requests.post(f"{API_URL}/signup", data={"username": username, "email": email, "password": password})
-                        if res.status_code == 200:
-                            st.success("Registrazione completata! Ora seleziona 'Accedi' per entrare.")
-                        else:
-                            try:
-                                error_detail = res.json().get("detail", "Errore durante la registrazione.")
-                            except:
-                                error_detail = f"Errore del server ({res.status_code}): {res.text}"
-                            st.error(error_detail)
-                    except requests.exceptions.ConnectionError:
-                        st.error("Impossibile connettersi al server backend.")
-                else:
-                    st.warning("Compila tutti i campi.")
-                    
+        if st.button("Annulla / Torna Indietro"):
+            st.session_state.waiting_for_otp = False
+            st.rerun()
+
     else:
-        with st.form("reset_form"):
-            st.write("Inserisci la tua email e imposta una nuova password.")
-            email_reset = st.text_input("La tua Email")
-            new_password = st.text_input("Nuova Password", type="password")
-            submit_reset = st.form_submit_button("Reimposta Password")
-            
-            if submit_reset:
-                if email_reset and new_password:
-                    try:
-                        res = requests.post(f"{API_URL}/reset-password", data={"email": email_reset, "new_password": new_password})
-                        if res.status_code == 200:
-                            st.success("Password reimpostata con successo! Ora seleziona 'Accedi' per entrare.")
-                        else:
-                            try:
+        choice = st.radio("Scegli un'opzione", ["Accedi", "Registrati", "Password dimenticata"])
+        
+        if choice == "Accedi":
+            with st.form("login_form"):
+                email = st.text_input("La tua Email")
+                password = st.text_input("Password", type="password")
+                submit_login = st.form_submit_button("Avanti (Invia Codice)")
+                
+                if submit_login:
+                    if email and password:
+                        try:
+                            # Richiede l'invio del codice email reale
+                            res = requests.post(f"{API_URL}/login-request", data={"username": email, "password": password})
+                            if res.status_code == 200:
+                                st.session_state.temp_email = email
+                                st.session_state.waiting_for_otp = True
+                                st.success("Codice inviato via email! Controlla la posta.")
+                                st.rerun()
+                            else:
+                                error_detail = res.json().get("detail", "Email o password errati.")
+                                st.error(error_detail)
+                        except requests.exceptions.ConnectionError:
+                            st.error("Impossibile connettersi al server backend.")
+                    else:
+                        st.warning("Compila tutti i campi.")
+                        
+        elif choice == "Registrati":
+            with st.form("signup_form"):
+                username = st.text_input("Scegli un Nome Utente")
+                email = st.text_input("La tua Email")
+                password = st.text_input("Scegli una Password", type="password")
+                submit_signup = st.form_submit_button("Registrati")
+                
+                if submit_signup:
+                    if username and email and password:
+                        try:
+                            res = requests.post(f"{API_URL}/signup", data={"username": username, "email": email, "password": password})
+                            if res.status_code == 200:
+                                st.success("Registrazione completata! Ora seleziona 'Accedi' per entrare.")
+                            else:
+                                error_detail = res.json().get("detail", "Errore durante la registrazione.")
+                                st.error(error_detail)
+                        except requests.exceptions.ConnectionError:
+                            st.error("Impossibile connettersi al server backend.")
+                    else:
+                        st.warning("Compila tutti i campi.")
+                        
+        else:
+            with st.form("reset_form"):
+                st.write("Inserisci la tua email e imposta una nuova password.")
+                email_reset = st.text_input("La tua Email")
+                new_password = st.text_input("Nuova Password", type="password")
+                submit_reset = st.form_submit_button("Reimposta Password")
+                
+                if submit_reset:
+                    if email_reset and new_password:
+                        try:
+                            res = requests.post(f"{API_URL}/reset-password", data={"email": email_reset, "new_password": new_password})
+                            if res.status_code == 200:
+                                st.success("Password reimpostata con successo! Ora seleziona 'Accedi' per entrare.")
+                            else:
                                 error_detail = res.json().get("detail", "Errore durante il reset.")
-                            except:
-                                error_detail = f"Errore del server ({res.status_code}): {res.text}"
-                            st.error(error_detail)
-                    except requests.exceptions.ConnectionError:
-                        st.error("Impossibile connettersi al server backend.")
-                else:
-                    st.warning("Compila tutti i campi.")
+                                st.error(error_detail)
+                        except requests.exceptions.ConnectionError:
+                            st.error("Impossibile connettersi al server backend.")
+                    else:
+                        st.warning("Compila tutti i campi.")
 
 else:
     st.sidebar.write(f"📧 Email: **{st.session_state.email}**")
     if st.sidebar.button("Esci (Logout)"):
         st.session_state.token = None
         st.session_state.email = None
+        st.session_state.waiting_for_otp = False
         st.rerun()
 
     st.sidebar.divider()
@@ -123,8 +151,8 @@ else:
     st.title("Uni Study Hub 📚")
     st.write(f"Benvenuta nel tuo spazio protetto!")
 
-    # Sostituisci "tua-email@admin.com" con la tua vera email di registrazione per sbloccare il pannello admin
-    is_admin = st.session_state.email.lower() == "carmencaracoci0@gmail.com"
+    # Sostituisci con la tua vera email di registrazione per sbloccare il pannello admin
+    is_admin = st.session_state.email.lower() == "tua-email@admin.com"
 
     if is_admin:
         tab1, tab2, tab3, tab4 = st.tabs(["📚 Corsi & Appunti", "🍅 Pomodoro & Albero", "📊 Situazione Studio", "🔒 Pannello Admin"])
@@ -208,7 +236,7 @@ else:
                                 else:
                                     st.caption("Nessun appunto caricato per questo corso.")
             except:
-                                st.error("Impossibile caricare i dati dal server.")
+                st.error("Impossibile caricare i dati dal server.")
 
     with tab2:
         st.header("Timer Pomodoro & Foresta del Focus 🌳")
