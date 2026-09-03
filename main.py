@@ -130,6 +130,19 @@ def read_courses(current_user: User = Depends(get_current_user), session: Sessio
     courses = session.exec(select(Course).where(Course.user_id == current_user.id)).all()
     return courses
 
+# Endpoint per aggiornare lo stato del corso (in studio / completato)
+@app.put("/courses/{course_id}/status")
+def update_course_status(course_id: int, status: str = Form(...), current_user: User = Depends(get_current_user), session: Session = Depends(get_session)):
+    course = session.exec(select(Course).where(Course.id == course_id, Course.user_id == current_user.id)).first()
+    if not course:
+        raise HTTPException(status_code=404, detail="Corso non trovato.")
+    
+    course.status = status
+    session.add(course)
+    session.commit()
+    session.refresh(course)
+    return {"message": "Stato del corso aggiornato con successo!"}
+
 @app.post("/notes/upload-folder/")
 def upload_folder(
     course_name: str = Form(...),

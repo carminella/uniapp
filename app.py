@@ -176,6 +176,30 @@ else:
                     else:
                         for c in courses:
                             with st.expander(f"📖 {c['name']} (Stato: {c['status']})"):
+                                # Menu a tendina e pulsante per aggiornare lo stato del corso
+                                new_status = st.selectbox(
+                                    "Cambia stato", 
+                                    ["in studio", "completato"], 
+                                    index=0 if c['status'] == "in studio" else 1,
+                                    key=f"status_{c['id']}"
+                                )
+                                
+                                if st.button("Aggiorna Stato", key=f"btn_{c['id']}" ):
+                                    try:
+                                        res = requests.put(
+                                            f"{API_URL}/courses/{c['id']}/status", 
+                                            data={"status": new_status}, 
+                                            headers=get_headers()
+                                        )
+                                        if res.status_code == 200:
+                                            st.success("Stato aggiornato! 🎉")
+                                            st.rerun()
+                                        else:
+                                            st.error("Errore nell'aggiornamento.")
+                                    except:
+                                        st.error("Impossibile connettersi al server.")
+
+                                st.divider()
                                 course_notes = [n for n in notes if n['course_id'] == c['id']]
                                 if course_notes:
                                     st.write("**Appunti caricati:**")
