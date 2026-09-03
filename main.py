@@ -1,4 +1,5 @@
 import os
+import random
 from typing import List
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -8,6 +9,7 @@ from contextlib import asynccontextmanager
 import bcrypt
 from jose import JWTError, jwt
 from datetime import datetime, timedelta
+import resend
 
 from database import create_db_and_tables, get_session
 from models import User, Course, Note
@@ -15,6 +17,12 @@ from models import User, Course, Note
 SECRET_KEY = "la_tua_chiave_segreta_super_sicura_da_cambiare"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
+
+# Imposta la chiave API di Resend dalle variabili d'ambiente di Render
+resend.api_key = os.environ.get("RESEND_API_KEY", "la_tua_resend_api_key")
+
+# Dizionario temporaneo per i codici di verifica in attesa di conferma
+VERIFICATION_CODES = {}
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
@@ -84,15 +92,57 @@ def register_user(username: str = Form(...), email: str = Form(...), password: s
     
     return {"message": f"Utente '{username}' registrato con successo!"}
 
+# Step 1: Verifica email/password e invia l'email reale con il codice OTP
+@app.post("/login-request")
+def login_request(username: str = Form(...), password: str = Form(...), session: Session = Depends(get_session)):
+    user = session.exec(select(User).where(User.email == username)).first()
+    if not user or not verify_password(password, user.hashed_password):
+        raise HTTPException(status_code=401, detail="Email o password errati.")
+    
+    # Genera codice a 6 cifre
+    code = str(random.randint(100000, 999999))
+    VERIFICATION_CODES[username] = code
+    
+    # Invia l'email tramite Resend
+    try:
+        params = {
+            "from": "Uni Study Hub <onboarding@resend.dev>",
+            "to": [username],
+            "subject": "Codice di verifica accesso - Uni Study Hub",
+            "html": f"""
+                <div style="font-family: Arial, sans-serif; padding: 20px;">
+                    <h2>Uni Study Hub 📚</h2>
+                    <p>Hai richiesto di effettuare l'accesso. Il tuo codice di verifica è:</p>
+                    <h1 style="color: #4F46E5; letter-spacing: 2px;">{code}</h1>
+                    <p>Il codice è valido solo per questa sessione.</p>
+                </div>
+            """,
+        }
+        resend.Emails.send(params)
+    except Exception as e:
+        print(f"Errore invio email: {e}")
+        raise HTTPException(status_code=500, detail="Impossibile inviare l'email di verifica.")
+    
+    return {"message": "Codice di verifica inviato via email."}
+
+# Step 2: Conferma il codice inserito dall'utente e rilascia il token
 @app.post("/token")
 def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), session: Session = Depends(get_session)):
-    user = session.exec(select(User).where(User.email == form_data.username)).first()
-    if not user or not verify_password(form_data.password, user.hashed_password):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Email o password errati",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+    email = form_data.username
+    entered_code = form_data.password
+    
+    expected_code = VERIFICATION_CODES.get(email)
+    
+    if not expected_code or expected_code != entered_code:
+        raise HTTPException(status_code=401, detail="Codice di verifica non valido o scaduto.")
+    
+    # Rimuovi il codice usato
+    del VERIFICATION_CODES[email]
+    
+    user = session.exec(select(User).where(User.email == email)).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Utente non trovato.")
+        
     access_token = create_access_token(data={"sub": user.email})
     return {"access_token": access_token, "token_type": "bearer"}
 
@@ -130,7 +180,6 @@ def read_courses(current_user: User = Depends(get_current_user), session: Sessio
     courses = session.exec(select(Course).where(Course.user_id == current_user.id)).all()
     return courses
 
-# Endpoint per aggiornare lo stato del corso (in studio / completato)
 @app.put("/courses/{course_id}/status")
 def update_course_status(course_id: int, status: str = Form(...), current_user: User = Depends(get_current_user), session: Session = Depends(get_session)):
     course = session.exec(select(Course).where(Course.id == course_id, Course.user_id == current_user.id)).first()

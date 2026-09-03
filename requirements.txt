@@ -6,3 +6,4 @@ python-jose
 bcrypt
 requests
 streamlit
+resend
