@@ -3,7 +3,7 @@ import requests
 import time
 
 # INSERISCI QUI IL TUO LINK DI RENDER (senza lo slash finale!)
-API_URL = "https://uniapp-o6cv.onrender.com/"
+API_URL = "https://uniapp-o6cv.onrender.com"
 
 st.set_page_config(page_title="Uni Study Hub", page_icon="📚", layout="centered")
 
