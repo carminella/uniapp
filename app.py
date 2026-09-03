@@ -18,7 +18,7 @@ if not st.session_state.token:
     st.title("Uni Study Hub 📚")
     st.write("Il tuo spazio personale e protetto per gestire esami, appunti e focus.")
     
-    choice = st.radio("Scegli un'opzione", ["Accedi", "Registrati"])
+    choice = st.radio("Scegli un'opzione", ["Accedi", "Registrati", "Password dimenticata"])
     
     if choice == "Accedi":
         with st.form("login_form"):
@@ -47,7 +47,7 @@ if not st.session_state.token:
                 else:
                     st.warning("Compila tutti i campi.")
                     
-    else:
+    elif choice == "Registrati":
         with st.form("signup_form"):
             username = st.text_input("Scegli un Nome Utente")
             email = st.text_input("La tua Email")
@@ -63,6 +63,30 @@ if not st.session_state.token:
                         else:
                             try:
                                 error_detail = res.json().get("detail", "Errore durante la registrazione.")
+                            except:
+                                error_detail = f"Errore del server ({res.status_code}): {res.text}"
+                            st.error(error_detail)
+                    except requests.exceptions.ConnectionError:
+                        st.error("Impossibile connettersi al server backend.")
+                else:
+                    st.warning("Compila tutti i campi.")
+                    
+    else:
+        with st.form("reset_form"):
+            st.write("Inserisci la tua email e imposta una nuova password.")
+            email_reset = st.text_input("La tua Email")
+            new_password = st.text_input("Nuova Password", type="password")
+            submit_reset = st.form_submit_button("Reimposta Password")
+            
+            if submit_reset:
+                if email_reset and new_password:
+                    try:
+                        res = requests.post(f"{API_URL}/reset-password", data={"email": email_reset, "new_password": new_password})
+                        if res.status_code == 200:
+                            st.success("Password reimpostata con successo! Ora seleziona 'Accedi' per entrare.")
+                        else:
+                            try:
+                                error_detail = res.json().get("detail", "Errore durante il reset.")
                             except:
                                 error_detail = f"Errore del server ({res.status_code}): {res.text}"
                             st.error(error_detail)

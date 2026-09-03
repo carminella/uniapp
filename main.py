@@ -96,6 +96,19 @@ def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), ses
     access_token = create_access_token(data={"sub": user.email})
     return {"access_token": access_token, "token_type": "bearer"}
 
+# Endpoint per reimpostare la password in caso di smarrimento
+@app.post("/reset-password")
+def reset_password(email: str = Form(...), new_password: str = Form(...), session: Session = Depends(get_session)):
+    user = session.exec(select(User).where(User.email == email)).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Email non trovata nel sistema.")
+    
+    user.hashed_password = get_password_hash(new_password)
+    session.add(user)
+    session.commit()
+    session.refresh(user)
+    return {"message": "Password aggiornata con successo!"}
+
 # Endpoint per cambiare il nome utente
 @app.put("/user/update-username")
 def update_username(new_username: str = Form(...), current_user: User = Depends(get_current_user), session: Session = Depends(get_session)):
