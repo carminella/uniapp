@@ -1,4 +1,5 @@
 import os
+import random
 from typing import List
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -12,9 +13,12 @@ from datetime import datetime, timedelta
 from database import create_db_and_tables, get_session
 from models import User, Course, Note
 
-SECRET_KEY = "la_tua_chiave_segreta_super_sicura_da_cambiare"
+SECRET_KEY = "Darione"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
+
+# Dizionario temporaneo in memoria per salvare i codici di verifica (es. email -> codice)
+VERIFICATION_CODES = {}
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
@@ -84,19 +88,44 @@ def register_user(username: str = Form(...), email: str = Form(...), password: s
     
     return {"message": f"Utente '{username}' registrato con successo!"}
 
+# Step 1: Controlla email e password e invia/genera il codice di verifica
+@app.post("/login-request")
+def login_request(username: str = Form(...), password: str = Form(...), session: Session = Depends(get_session)):
+    user = session.exec(select(User).where(User.email == username)).first()
+    if not user or not verify_password(password, user.hashed_password):
+        raise HTTPException(status_code=401, detail="Email o password errati.")
+    
+    # Genera un codice casuale a 6 cifre
+    code = str(random.randint(100000, 999999))
+    VERIFICATION_CODES[username] = code
+    
+    # Stampiamo il codice nei log di Render (simulando l'invio dell'email di avviso accesso)
+    print(f"\n[SICUREZZA] Codice di verifica per {username}: {code}\n")
+    
+    return {"message": "Codice di verifica generato con successo."}
+
+# Step 2: Conferma il codice e rilascia il Token JWT definitivo
 @app.post("/token")
 def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), session: Session = Depends(get_session)):
-    user = session.exec(select(User).where(User.email == form_data.username)).first()
-    if not user or not verify_password(form_data.password, user.hashed_password):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Email o password errati",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+    # In questo flusso, form_data.username è l'email e form_data.password è il codice di verifica inserito dall'utente
+    email = form_data.username
+    entered_code = form_data.password
+    
+    expected_code = VERIFICATION_CODES.get(email)
+    
+    if not expected_code or expected_code != entered_code:
+        raise HTTPException(status_code=401, detail="Codice di verifica non valido o scaduto.")
+    
+    # Codice corretto! Rimuoviamo il codice usato e creiamo il token
+    del VERIFICATION_CODES[email]
+    
+    user = session.exec(select(User).where(User.email == email)).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Utente non trovato.")
+        
     access_token = create_access_token(data={"sub": user.email})
     return {"access_token": access_token, "token_type": "bearer"}
 
-# Endpoint per reimpostare la password in caso di smarrimento
 @app.post("/reset-password")
 def reset_password(email: str = Form(...), new_password: str = Form(...), session: Session = Depends(get_session)):
     user = session.exec(select(User).where(User.email == email)).first()
@@ -109,7 +138,6 @@ def reset_password(email: str = Form(...), new_password: str = Form(...), sessio
     session.refresh(user)
     return {"message": "Password aggiornata con successo!"}
 
-# Endpoint per cambiare il nome utente
 @app.put("/user/update-username")
 def update_username(new_username: str = Form(...), current_user: User = Depends(get_current_user), session: Session = Depends(get_session)):
     existing = session.exec(select(User).where(User.username == new_username)).first()
