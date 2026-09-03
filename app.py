@@ -22,7 +22,6 @@ if not st.session_state.token:
     st.title("Uni Study Hub 📚")
     st.write("Il tuo spazio personale e protetto per gestire esami, appunti e focus.")
     
-    # Se siamo in attesa del codice OTP via email
     if st.session_state.waiting_for_otp:
         st.info(f"Abbiamo inviato un codice di verifica a **{st.session_state.temp_email}**. Controlla la tua casella di posta!")
         
@@ -33,7 +32,6 @@ if not st.session_state.token:
             if submit_otp:
                 if otp_code:
                     try:
-                        # Mandiamo il codice come "password" al token endpoint come richiesto dal backend
                         res = requests.post(f"{API_URL}/token", data={"username": st.session_state.temp_email, "password": otp_code})
                         if res.status_code == 200:
                             data = res.json()
@@ -65,7 +63,6 @@ if not st.session_state.token:
                 if submit_login:
                     if email and password:
                         try:
-                            # Richiede l'invio del codice email reale
                             res = requests.post(f"{API_URL}/login-request", data={"username": email, "password": password})
                             if res.status_code == 200:
                                 st.session_state.temp_email = email
@@ -151,8 +148,8 @@ else:
     st.title("Uni Study Hub 📚")
     st.write(f"Benvenuta nel tuo spazio protetto!")
 
-    # Sostituisci con la tua vera email di registrazione per sbloccare il pannello admin
-    is_admin = st.session_state.email.lower() == "tua-email@admin.com"
+    # La tua email impostata come amministratrice
+    is_admin = st.session_state.email.lower() == "carmencaracoci0@gmail.com"
 
     if is_admin:
         tab1, tab2, tab3, tab4 = st.tabs(["📚 Corsi & Appunti", "🍅 Pomodoro & Albero", "📊 Situazione Studio", "🔒 Pannello Admin"])
