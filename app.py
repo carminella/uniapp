@@ -99,25 +99,68 @@ if not st.session_state.token:
                         st.warning("Compila tutti i campi.")
                         
         else:
-            with st.form("reset_form"):
-                st.write("Inserisci la tua email e imposta una nuova password.")
-                email_reset = st.text_input("La tua Email")
-                new_password = st.text_input("Nuova Password", type="password")
-                submit_reset = st.form_submit_button("Reimposta Password")
-                
-                if submit_reset:
-                    if email_reset and new_password:
-                        try:
-                            res = requests.post(f"{API_URL}/reset-password", data={"email": email_reset, "new_password": new_password})
-                            if res.status_code == 200:
-                                st.success("Password reimpostata con successo! Ora seleziona 'Accedi' per entrare.")
-                            else:
-                                error_detail = res.json().get("detail", "Errore durante il reset.")
-                                st.error(error_detail)
-                        except requests.exceptions.ConnectionError:
-                            st.error("Impossibile connettersi al server backend.")
-                    else:
-                        st.warning("Compila tutti i campi.")
+            # --- REC密码 PASSWORD PROTETTO CON OTP ---
+            if "waiting_for_reset_otp" not in st.session_state:
+                st.session_state.waiting_for_reset_otp = False
+            if "reset_email" not in st.session_state:
+                st.session_state.reset_email = ""
+
+            if not st.session_state.waiting_for_reset_otp:
+                with st.form("forgot_form"):
+                    st.write("Inserisci la tua email per ricevere il codice di recupero personale.")
+                    email_reset = st.text_input("La tua Email")
+                    submit_forgot = st.form_submit_button("Invia Codice di Recupero")
+                    
+                    if submit_forgot:
+                        if email_reset:
+                            try:
+                                res = requests.post(f"{API_URL}/forgot-password-request", data={"email": email_reset})
+                                if res.status_code == 200:
+                                    st.session_state.reset_email = email_reset
+                                    st.session_state.waiting_for_reset_otp = True
+                                    st.success("Codice inviato via email! Controlla la posta.")
+                                    st.rerun()
+                                else:
+                                    error_detail = res.json().get("detail", "Errore durante l'invio.")
+                                    st.error(error_detail)
+                            except:
+                                st.error("Impossibile connettersi al server.")
+                        else:
+                            st.warning("Inserisci l'email.")
+            else:
+                st.info(f"Abbiamo inviato un codice di recupero a **{st.session_state.reset_email}**.")
+                with st.form("reset_confirm_form"):
+                    reset_code = st.text_input("Inserisci il codice a 6 cifre ricevuto", max_chars=6)
+                    new_password = st.text_input("Nuova Password", type="password")
+                    submit_reset = st.form_submit_button("Conferma e Cambia Password")
+                    
+                    if submit_reset:
+                        if reset_code and new_password:
+                            try:
+                                res = requests.post(
+                                    f"{API_URL}/reset-password", 
+                                    data={
+                                        "email": st.session_state.reset_email, 
+                                        "code": reset_code, 
+                                        "new_password": new_password
+                                    }
+                                )
+                                if res.status_code == 200:
+                                    st.success("Password reimpostata con successo! Ora puoi effettuare l'accesso.")
+                                    st.session_state.waiting_for_reset_otp = False
+                                    st.session_state.reset_email = ""
+                                    st.rerun()
+                                else:
+                                    error_detail = res.json().get("detail", "Codice errato o scaduto.")
+                                    st.error(error_detail)
+                            except:
+                                st.error("Impossibile connettersi al server.")
+                        else:
+                            st.warning("Compila tutti i campi.")
+                            
+                if st.button("Annulla / Indietro"):
+                    st.session_state.waiting_for_reset_otp = False
+                    st.rerun()
 
 else:
     st.sidebar.write(f"📧 Email: **{st.session_state.email}**")
@@ -201,7 +244,7 @@ else:
                     else:
                         for c in courses:
                             with st.expander(f"📖 {c['name']} (Stato: {c['status']})"):
-                                # Stato aggiornato con "da iniziare"
+                                # Stati aggiornati includendo "da iniziare"
                                 current_status = c['status']
                                 status_options = ["da iniziare", "in studio", "completato"]
                                 default_index = status_options.index(current_status) if current_status in status_options else 0
