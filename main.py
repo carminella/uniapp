@@ -1,5 +1,7 @@
 import os
 import random
+import smtplib
+from email.message import EmailMessage
 from typing import List
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -9,7 +11,6 @@ from contextlib import asynccontextmanager
 import bcrypt
 from jose import JWTError, jwt
 from datetime import datetime, timedelta
-import resend
 
 from database import create_db_and_tables, get_session
 from models import User, Course, Note
@@ -17,9 +18,6 @@ from models import User, Course, Note
 SECRET_KEY = "la_tua_chiave_segreta_super_sicura_da_cambiare"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
-
-# Imposta la chiave API di Resend dalle variabili d'ambiente di Render
-resend.api_key = os.environ.get("RESEND_API_KEY", "la_tua_resend_api_key")
 
 # Dizionario temporaneo per i codici di verifica in attesa di conferma
 VERIFICATION_CODES = {}
@@ -78,6 +76,29 @@ def get_current_user(token: str = Depends(oauth2_scheme), session: Session = Dep
         raise credentials_exception
     return user
 
+# --- FUNZIONE INVIO EMAIL (GMAIL SMTP) ---
+def send_verification_email(to_email: str, verification_code: str):
+    smtp_server = "smtp.gmail.com"
+    smtp_port = 465  # Connessione sicura SSL
+    sender_email = os.getenv("SENDER_EMAIL")
+    sender_password = os.getenv("SENDER_PASSWORD")
+
+    msg = EmailMessage()
+    msg.set_content(f"Il tuo codice di verifica per Uni Study Hub è: {verification_code}")
+    msg["Subject"] = "Codice di verifica accesso - Uni Study Hub"
+    msg["From"] = sender_email
+    msg["To"] = to_email
+
+    try:
+        with smtplib.SMTP_SSL(smtp_server, smtp_port) as server:
+            server.login(sender_email, sender_password)
+            server.send_message(msg)
+        print("Email inviata con successo!")
+        return True
+    except Exception as e:
+        print(f"Errore invio email: {e}")
+        raise HTTPException(status_code=500, detail="Impossibile inviare l'email di verifica.")
+
 @app.post("/signup")
 def register_user(username: str = Form(...), email: str = Form(...), password: str = Form(...), session: Session = Depends(get_session)):
     existing_user = session.exec(select(User).where((User.email == email) | (User.username == username))).first()
@@ -92,7 +113,7 @@ def register_user(username: str = Form(...), email: str = Form(...), password: s
     
     return {"message": f"Utente '{username}' registrato con successo!"}
 
-# Step 1: Verifica email/password e invia l'email reale con il codice OTP
+# Step 1: Verifica email/password e invia l'email tramite Gmail SMTP a chiunque
 @app.post("/login-request")
 def login_request(username: str = Form(...), password: str = Form(...), session: Session = Depends(get_session)):
     user = session.exec(select(User).where(User.email == username)).first()
@@ -103,25 +124,8 @@ def login_request(username: str = Form(...), password: str = Form(...), session:
     code = str(random.randint(100000, 999999))
     VERIFICATION_CODES[username] = code
     
-    # Invia l'email tramite Resend
-    try:
-        params = {
-            "from": "Uni Study Hub <onboarding@resend.dev>",
-            "to": [username],
-            "subject": "Codice di verifica accesso - Uni Study Hub",
-            "html": f"""
-                <div style="font-family: Arial, sans-serif; padding: 20px;">
-                    <h2>Uni Study Hub 📚</h2>
-                    <p>Hai richiesto di effettuare l'accesso. Il tuo codice di verifica è:</p>
-                    <h1 style="color: #4F46E5; letter-spacing: 2px;">{code}</h1>
-                    <p>Il codice è valido solo per questa sessione.</p>
-                </div>
-            """,
-        }
-        resend.Emails.send(params)
-    except Exception as e:
-        print(f"Errore invio email: {e}")
-        raise HTTPException(status_code=500, detail="Impossibile inviare l'email di verifica.")
+    # Invia l'email tramite Gmail SMTP
+    send_verification_email(username, code)
     
     return {"message": "Codice di verifica inviato via email."}
 
@@ -204,7 +208,7 @@ def upload_folder(
     course = session.exec(statement).first()
 
     if not course:
-        course = Course(name=course_name, status="in studio", user_id=current_user.id)
+        course = Course(name=course_name, status="da iniziare", user_id=current_user.id)
         session.add(course)
         session.commit()
         session.refresh(course)
