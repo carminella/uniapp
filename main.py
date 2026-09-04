@@ -19,8 +19,9 @@ SECRET_KEY = "la_tua_chiave_segreta_super_sicura_da_cambiare"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
 
-# Dizionario temporaneo per i codici di verifica in attesa di conferma
+# Dizionari temporanei per i codici di verifica e reset in attesa di conferma
 VERIFICATION_CODES = {}
+RESET_CODES = {}
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
@@ -77,15 +78,15 @@ def get_current_user(token: str = Depends(oauth2_scheme), session: Session = Dep
     return user
 
 # --- FUNZIONE INVIO EMAIL (GMAIL SMTP) ---
-def send_verification_email(to_email: str, verification_code: str):
+def send_verification_email(to_email: str, verification_code: str, subject_text: str = "Codice di verifica accesso - Uni Study Hub", body_prefix: str = "Il tuo codice di verifica per Uni Study Hub è"):
     smtp_server = "smtp.gmail.com"
     smtp_port = 465  # Connessione sicura SSL
     sender_email = os.getenv("SENDER_EMAIL")
     sender_password = os.getenv("SENDER_PASSWORD")
 
     msg = EmailMessage()
-    msg.set_content(f"Il tuo codice di verifica per Uni Study Hub è: {verification_code}")
-    msg["Subject"] = "Codice di verifica accesso - Uni Study Hub"
+    msg.set_content(f"{body_prefix}: {verification_code}")
+    msg["Subject"] = subject_text
     msg["From"] = sender_email
     msg["To"] = to_email
 
@@ -125,7 +126,7 @@ def login_request(username: str = Form(...), password: str = Form(...), session:
     VERIFICATION_CODES[username] = code
     
     # Invia l'email tramite Gmail SMTP
-    send_verification_email(username, code)
+    send_verification_email(username, code, subject_text="Codice di verifica accesso - Uni Study Hub", body_prefix="Il tuo codice di verifica per Uni Study Hub è")
     
     return {"message": "Codice di verifica inviato via email."}
 
@@ -150,11 +151,38 @@ def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), ses
     access_token = create_access_token(data={"sub": user.email})
     return {"access_token": access_token, "token_type": "bearer"}
 
-@app.post("/reset-password")
-def reset_password(email: str = Form(...), new_password: str = Form(...), session: Session = Depends(get_session)):
+# Step 1 Recupero Password: Invia codice OTP all'email
+@app.post("/forgot-password-request")
+def forgot_password_request(email: str = Form(...), session: Session = Depends(get_session)):
     user = session.exec(select(User).where(User.email == email)).first()
     if not user:
         raise HTTPException(status_code=404, detail="Email non trovata nel sistema.")
+    
+    code = str(random.randint(100000, 999999))
+    RESET_CODES[email] = code
+    
+    send_verification_email(
+        email, 
+        code, 
+        subject_text="Recupero Password - Uni Study Hub", 
+        body_prefix="Il tuo codice per reimpostare la password su Uni Study Hub è"
+    )
+    
+    return {"message": "Codice di recupero inviato via email."}
+
+# Step 2 Recupero Password: Verifica codice e aggiorna password
+@app.post("/reset-password")
+def reset_password(email: str = Form(...), code: str = Form(...), new_password: str = Form(...), session: Session = Depends(get_session)):
+    expected_code = RESET_CODES.get(email)
+    
+    if not expected_code or expected_code != code:
+        raise HTTPException(status_code=401, detail="Codice di verifica non valido o scaduto.")
+    
+    del RESET_CODES[email]
+    
+    user = session.exec(select(User).where(User.email == email)).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Utente non trovato.")
     
     user.hashed_password = get_password_hash(new_password)
     session.add(user)
