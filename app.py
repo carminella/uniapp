@@ -148,7 +148,6 @@ else:
     st.title("Uni Study Hub 📚")
     st.write(f"Benvenuta nel tuo spazio protetto!")
 
-    # La tua email impostata come amministratrice
     is_admin = st.session_state.email.lower() == "carmencaracoci0@gmail.com"
 
     if is_admin:
@@ -202,10 +201,15 @@ else:
                     else:
                         for c in courses:
                             with st.expander(f"📖 {c['name']} (Stato: {c['status']})"):
+                                # Stato aggiornato con "da iniziare"
+                                current_status = c['status']
+                                status_options = ["da iniziare", "in studio", "completato"]
+                                default_index = status_options.index(current_status) if current_status in status_options else 0
+
                                 new_status = st.selectbox(
                                     "Cambia stato", 
-                                    ["in studio", "completato"], 
-                                    index=0 if c['status'] == "in studio" else 1,
+                                    status_options, 
+                                    index=default_index,
                                     key=f"status_{c['id']}"
                                 )
                                 
@@ -299,12 +303,14 @@ else:
             if courses_res.status_code == 200:
                 courses = courses_res.json()
                 if courses:
-                    completed_count = sum(1 for c in courses if c['status'] == 'completato')
+                    to_start_count = sum(1 for c in courses if c['status'] == 'da iniziare')
                     studying_count = sum(1 for c in courses if c['status'] == 'in studio')
+                    completed_count = sum(1 for c in courses if c['status'] == 'completato')
                     
-                    col_m1, col_m2 = st.columns(2)
-                    col_m1.metric("Corsi in Studio", studying_count)
-                    col_m2.metric("Corsi Superati", completed_count)
+                    col_m1, col_m2, col_m3 = st.columns(3)
+                    col_m1.metric("Da Iniziare", to_start_count)
+                    col_m2.metric("In Studio", studying_count)
+                    col_m3.metric("Completati", completed_count)
                     
                     st.divider()
                     st.subheader("Panoramica Materie")
