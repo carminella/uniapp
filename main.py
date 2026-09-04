@@ -1,5 +1,4 @@
 import os
-import random
 from typing import List
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -9,7 +8,6 @@ from contextlib import asynccontextmanager
 import bcrypt
 from jose import JWTError, jwt
 from datetime import datetime, timedelta
-import resend
 
 from database import create_db_and_tables, get_session
 from models import User, Course, Note
@@ -17,13 +15,6 @@ from models import User, Course, Note
 SECRET_KEY = "la_tua_chiave_segreta_super_sicura_da_cambiare"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
-
-# Imposta la chiave API di Resend dalle variabili d'ambiente di Render
-resend.api_key = os.environ.get("RESEND_API_KEY", "la_tua_resend_api_key")
-
-# Dizionari temporanei per i codici di verifica e reset in attesa di conferma
-VERIFICATION_CODES = {}
-RESET_CODES = {}
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
@@ -93,101 +84,23 @@ def register_user(username: str = Form(...), email: str = Form(...), password: s
     
     return {"message": f"Utente '{username}' registrato con successo!"}
 
-# Step 1: Verifica email/password e invia l'email tramite Resend
-@app.post("/login-request")
-def login_request(username: str = Form(...), password: str = Form(...), session: Session = Depends(get_session)):
-    user = session.exec(select(User).where(User.email == username)).first()
-    if not user or not verify_password(password, user.hashed_password):
-        raise HTTPException(status_code=401, detail="Email o password errati.")
-    
-    code = str(random.randint(100000, 999999))
-    VERIFICATION_CODES[username] = code
-    
-    try:
-        params = {
-            "from": "Uni Study Hub <onboarding@resend.dev>",
-            "to": [username],
-            "subject": "Codice di verifica accesso - Uni Study Hub",
-            "html": f"""
-                <div style="font-family: Arial, sans-serif; padding: 20px;">
-                    <h2>Uni Study Hub 📚</h2>
-                    <p>Hai richiesto di effettuare l'accesso. Il tuo codice di verifica è:</p>
-                    <h1 style="color: #4F46E5; letter-spacing: 2px;">{code}</h1>
-                    <p>Il codice è valido solo per questa sessione.</p>
-                </div>
-            """,
-        }
-        resend.Emails.send(params)
-    except Exception as e:
-        print(f"Errore invio email: {e}")
-        raise HTTPException(status_code=500, detail="Impossibile inviare l'email di verifica.")
-    
-    return {"message": "Codice di verifica inviato via email."}
-
-# Step 2: Conferma il codice inserito dall'utente e rilascia il token
+# Login diretto con username/email e password (standard OAuth2)
 @app.post("/token")
 def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), session: Session = Depends(get_session)):
-    email = form_data.username
-    entered_code = form_data.password
+    user = session.exec(select(User).where((User.email == form_data.username) | (User.username == form_data.username))).first()
     
-    expected_code = VERIFICATION_CODES.get(email)
-    
-    if not expected_code or expected_code != entered_code:
-        raise HTTPException(status_code=401, detail="Codice di verifica non valido o scaduto.")
-    
-    del VERIFICATION_CODES[email]
-    
-    user = session.exec(select(User).where(User.email == email)).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="Utente non trovato.")
+    if not user or not verify_password(form_data.password, user.hashed_password):
+        raise HTTPException(status_code=401, detail="Credenziali non valide (Email/Username o Password errati).")
         
     access_token = create_access_token(data={"sub": user.email})
     return {"access_token": access_token, "token_type": "bearer"}
 
-# Step 1 Recupero Password: Invia codice OTP all'email via Resend
-@app.post("/forgot-password-request")
-def forgot_password_request(email: str = Form(...), session: Session = Depends(get_session)):
-    user = session.exec(select(User).where(User.email == email)).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="Email non trovata nel sistema.")
-    
-    code = str(random.randint(100000, 999999))
-    RESET_CODES[email] = code
-    
-    try:
-        params = {
-            "from": "Uni Study Hub <onboarding@resend.dev>",
-            "to": [email],
-            "subject": "Recupero Password - Uni Study Hub",
-            "html": f"""
-                <div style="font-family: Arial, sans-serif; padding: 20px;">
-                    <h2>Uni Study Hub 📚</h2>
-                    <p>Hai richiesto di reimpostare la password. Il tuo codice di recupero è:</p>
-                    <h1 style="color: #4F46E5; letter-spacing: 2px;">{code}</h1>
-                    <p>Il codice è valido solo per questa sessione.</p>
-                </div>
-            """,
-        }
-        resend.Emails.send(params)
-    except Exception as e:
-        print(f"Errore invio email reset: {e}")
-        raise HTTPException(status_code=500, detail="Impossibile inviare l'email di recupero.")
-    
-    return {"message": "Codice di recupero inviato via email."}
-
-# Step 2 Recupero Password: Verifica codice e aggiorna password
+# Reset password diretto senza codici email
 @app.post("/reset-password")
-def reset_password(email: str = Form(...), code: str = Form(...), new_password: str = Form(...), session: Session = Depends(get_session)):
-    expected_code = RESET_CODES.get(email)
-    
-    if not expected_code or expected_code != code:
-        raise HTTPException(status_code=401, detail="Codice di verifica non valido o scaduto.")
-    
-    del RESET_CODES[email]
-    
+def reset_password(email: str = Form(...), new_password: str = Form(...), session: Session = Depends(get_session)):
     user = session.exec(select(User).where(User.email == email)).first()
     if not user:
-        raise HTTPException(status_code=404, detail="Utente non trovato.")
+        raise HTTPException(status_code=404, detail="Utente non trovato nel sistema.")
     
     user.hashed_password = get_password_hash(new_password)
     session.add(user)
