@@ -1,7 +1,5 @@
 import os
 import random
-import smtplib
-from email.message import EmailMessage
 from typing import List
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -11,6 +9,7 @@ from contextlib import asynccontextmanager
 import bcrypt
 from jose import JWTError, jwt
 from datetime import datetime, timedelta
+import resend
 
 from database import create_db_and_tables, get_session
 from models import User, Course, Note
@@ -18,6 +17,9 @@ from models import User, Course, Note
 SECRET_KEY = "la_tua_chiave_segreta_super_sicura_da_cambiare"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
+
+# Imposta la chiave API di Resend dalle variabili d'ambiente di Render
+resend.api_key = os.environ.get("RESEND_API_KEY", "la_tua_resend_api_key")
 
 # Dizionari temporanei per i codici di verifica e reset in attesa di conferma
 VERIFICATION_CODES = {}
@@ -77,29 +79,6 @@ def get_current_user(token: str = Depends(oauth2_scheme), session: Session = Dep
         raise credentials_exception
     return user
 
-# --- FUNZIONE INVIO EMAIL (GMAIL SMTP) ---
-def send_verification_email(to_email: str, verification_code: str, subject_text: str = "Codice di verifica accesso - Uni Study Hub", body_prefix: str = "Il tuo codice di verifica per Uni Study Hub è"):
-    smtp_server = "smtp.gmail.com"
-    smtp_port = 465  # Connessione sicura SSL
-    sender_email = os.getenv("SENDER_EMAIL")
-    sender_password = os.getenv("SENDER_PASSWORD")
-
-    msg = EmailMessage()
-    msg.set_content(f"{body_prefix}: {verification_code}")
-    msg["Subject"] = subject_text
-    msg["From"] = sender_email
-    msg["To"] = to_email
-
-    try:
-        with smtplib.SMTP_SSL(smtp_server, smtp_port) as server:
-            server.login(sender_email, sender_password)
-            server.send_message(msg)
-        print("Email inviata con successo!")
-        return True
-    except Exception as e:
-        print(f"Errore invio email: {e}")
-        raise HTTPException(status_code=500, detail="Impossibile inviare l'email di verifica.")
-
 @app.post("/signup")
 def register_user(username: str = Form(...), email: str = Form(...), password: str = Form(...), session: Session = Depends(get_session)):
     existing_user = session.exec(select(User).where((User.email == email) | (User.username == username))).first()
@@ -114,19 +93,34 @@ def register_user(username: str = Form(...), email: str = Form(...), password: s
     
     return {"message": f"Utente '{username}' registrato con successo!"}
 
-# Step 1: Verifica email/password e invia l'email tramite Gmail SMTP a chiunque
+# Step 1: Verifica email/password e invia l'email tramite Resend
 @app.post("/login-request")
 def login_request(username: str = Form(...), password: str = Form(...), session: Session = Depends(get_session)):
     user = session.exec(select(User).where(User.email == username)).first()
     if not user or not verify_password(password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Email o password errati.")
     
-    # Genera codice a 6 cifre
     code = str(random.randint(100000, 999999))
     VERIFICATION_CODES[username] = code
     
-    # Invia l'email tramite Gmail SMTP
-    send_verification_email(username, code, subject_text="Codice di verifica accesso - Uni Study Hub", body_prefix="Il tuo codice di verifica per Uni Study Hub è")
+    try:
+        params = {
+            "from": "Uni Study Hub <onboarding@resend.dev>",
+            "to": [username],
+            "subject": "Codice di verifica accesso - Uni Study Hub",
+            "html": f"""
+                <div style="font-family: Arial, sans-serif; padding: 20px;">
+                    <h2>Uni Study Hub 📚</h2>
+                    <p>Hai richiesto di effettuare l'accesso. Il tuo codice di verifica è:</p>
+                    <h1 style="color: #4F46E5; letter-spacing: 2px;">{code}</h1>
+                    <p>Il codice è valido solo per questa sessione.</p>
+                </div>
+            """,
+        }
+        resend.Emails.send(params)
+    except Exception as e:
+        print(f"Errore invio email: {e}")
+        raise HTTPException(status_code=500, detail="Impossibile inviare l'email di verifica.")
     
     return {"message": "Codice di verifica inviato via email."}
 
@@ -141,7 +135,6 @@ def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), ses
     if not expected_code or expected_code != entered_code:
         raise HTTPException(status_code=401, detail="Codice di verifica non valido o scaduto.")
     
-    # Rimuovi il codice usato
     del VERIFICATION_CODES[email]
     
     user = session.exec(select(User).where(User.email == email)).first()
@@ -151,7 +144,7 @@ def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), ses
     access_token = create_access_token(data={"sub": user.email})
     return {"access_token": access_token, "token_type": "bearer"}
 
-# Step 1 Recupero Password: Invia codice OTP all'email
+# Step 1 Recupero Password: Invia codice OTP all'email via Resend
 @app.post("/forgot-password-request")
 def forgot_password_request(email: str = Form(...), session: Session = Depends(get_session)):
     user = session.exec(select(User).where(User.email == email)).first()
@@ -161,12 +154,24 @@ def forgot_password_request(email: str = Form(...), session: Session = Depends(g
     code = str(random.randint(100000, 999999))
     RESET_CODES[email] = code
     
-    send_verification_email(
-        email, 
-        code, 
-        subject_text="Recupero Password - Uni Study Hub", 
-        body_prefix="Il tuo codice per reimpostare la password su Uni Study Hub è"
-    )
+    try:
+        params = {
+            "from": "Uni Study Hub <onboarding@resend.dev>",
+            "to": [email],
+            "subject": "Recupero Password - Uni Study Hub",
+            "html": f"""
+                <div style="font-family: Arial, sans-serif; padding: 20px;">
+                    <h2>Uni Study Hub 📚</h2>
+                    <p>Hai richiesto di reimpostare la password. Il tuo codice di recupero è:</p>
+                    <h1 style="color: #4F46E5; letter-spacing: 2px;">{code}</h1>
+                    <p>Il codice è valido solo per questa sessione.</p>
+                </div>
+            """,
+        }
+        resend.Emails.send(params)
+    except Exception as e:
+        print(f"Errore invio email reset: {e}")
+        raise HTTPException(status_code=500, detail="Impossibile inviare l'email di recupero.")
     
     return {"message": "Codice di recupero inviato via email."}
 
