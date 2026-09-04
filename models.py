@@ -10,7 +10,7 @@ class User(SQLModel, table=True):
 class Course(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str
-    status: str = "in studio"
+    status: str = "da inziare a studiare"
     user_id: int = Field(foreign_key="user.id")
 
 class Note(SQLModel, table=True):
